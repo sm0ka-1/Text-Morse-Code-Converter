@@ -1,5 +1,7 @@
 from tkinter import *
 import pandas as pd
+import pygame
+from PIL import Image, ImageTk
 
 # ---------------------------- CONVERTERS ---------------------------- #
 
@@ -9,29 +11,40 @@ alphabet["\n"] = "\n"
 reversed_alphabet = {value:key for key,value in alphabet.items()}
 
 def convert_to_morse():
+    global playing
+    playing = False
+    if pygame.mixer.get_busy():
+        pygame.mixer.stop()
+
     user_input = text_box.get("1.0", "end").rstrip().upper()
     text_to_convert = list(user_input)
     output = []
-    error = ""
 
     try:
         output = [alphabet[letter] for letter in text_to_convert]
     except KeyError:
-        error = "Sorry, only letters or numbers, please."
+        error_label["text"] = "Sorry, only letters or numbers."
 
     if len(output) != 0:
+        final_output = ""
+        for symbol in output:
+            if symbol != "\n":
+                final_output += " "
+            final_output += symbol
         morse_box.delete("1.0", "end")
-        morse_box.insert("1.0", " ".join(output))
+        morse_box.insert("1.0", final_output)
         error_label["text"] = ""
-
-    error_label["text"] = error
 
 
 def convert_to_text():
+    global playing
+    playing = False
+    if pygame.mixer.get_busy():
+        pygame.mixer.stop()
+
     user_input = morse_box.get("1.0", "end").rstrip()
     morse_lines = user_input.split("\n")
     output = []
-    error = ""
     for line in morse_lines:
         try:
             morse_words = line.split("/")
@@ -44,15 +57,74 @@ def convert_to_text():
             output.append("".join(word_output))
             output.append("\n")
         except KeyError:
-            error = 'Sorry, only ".", "-", "/" or " ", please.'
+            error_label["text"] = 'Sorry, only space or the following characters: . - /'
 
     if len(output) != 0:
         text_box.delete("1.0", "end")
         text_box.insert("1.0", "".join(output))
         error_label["text"] = ""
 
-    if error:
-        error_label["text"] = error
+
+# ------------------------- PLAY AND STOP AUDIO ------------------------- #
+
+playing = False
+
+def play_morse_step(symbol, index, morse_code, dot_sound, dash_sound):
+    global playing
+
+    if not playing:
+        return
+
+    if pygame.mixer.get_busy():
+        error_label["text"] = "Stop the current playback or wait until it ends."
+        return
+
+    if symbol == '.':
+        dot_sound.play()
+    elif symbol == "-":
+        dash_sound.play()
+    elif symbol == " ":
+        pass
+    elif symbol == "/":
+        pass
+    else:
+        error_label["text"] = "Sorry, no Morse Code to play."
+
+    if index < len(morse_code):
+        window.after(300, play_morse_step, morse_code[index], index+1, morse_code, dot_sound, dash_sound)
+    else:
+        playing = False
+
+
+def play_morse():
+    global playing
+    playing = True
+
+    if pygame.mixer.get_busy():
+        error_label["text"] = "Stop the current playback or wait until it ends."
+        return
+
+    morse_code = morse_box.get("1.0", "end").rstrip()
+    if morse_code == "":
+        error_label["text"] = "Sorry, no Morse Code to play."
+        playing = False
+        return
+
+    morse_code = morse_code.replace("\n", "/")
+
+    pygame.mixer.init()
+
+    dot_sound = pygame.mixer.Sound("dot.wav")
+    dash_sound = pygame.mixer.Sound("dash.wav")
+
+    play_morse_step(morse_code[0], 1, morse_code, dot_sound, dash_sound)
+
+
+def stop_playing():
+    global playing
+    playing = False
+    pygame.mixer.stop()
+    error_label["text"] = ""
 
 
 # ---------------------------- UI SETUP ------------------------------- #
@@ -92,13 +164,42 @@ text_box.grid(column=0, row=3, sticky=W+E, columnspan=2, padx=(0,10))
 morse_box = Text(height=5, width=30, font=(TEXT_FONT, 16))
 morse_box.grid(column=2, row=3, sticky=W+E, columnspan=2, padx=(10,0))
 
-to_morse_button = Button(text="Convert to Morse", command=convert_to_morse, font=(TEXT_FONT, 12, "bold"), bg="SlateGray4")
+to_morse_button = Button(text="Convert to Morse", command=convert_to_morse, font=(TEXT_FONT, 12, "bold"), bg="SlateGray4", highlightthickness=0)
 to_morse_button.grid(column=0, row=4, pady=(5,0), sticky=E, columnspan=2, padx=(0,10))
 
-to_text_button = Button(text="Convert to Text", command=convert_to_text, font=(TEXT_FONT, 12, "bold"), bg="SlateGray4")
+to_text_button = Button(text="Convert to Text", command=convert_to_text, font=(TEXT_FONT, 12, "bold"), bg="SlateGray4", highlightthickness=0)
 to_text_button.grid(column=3, row=4, pady=(5,0), sticky=E)
 
+play_img = Image.open("play_symbol.png")
+play_img_resized = play_img.resize((40,40))
+play_symbol_img = ImageTk.PhotoImage(play_img_resized)
+play_button = Button(image=play_symbol_img, highlightthickness=0, command=play_morse, bg=BG_COLOUR)
+play_button.grid(column=2, row=5, sticky=W, padx=(10,0))
+
+play_label_1 = Label(text="Play ", bg=BG_COLOUR, font=(TEXT_FONT, 13), fg="gray13")
+play_label_1.grid(column=2, row=5, sticky=E)
+
+play_label_2 = Label(text="Morse Code", bg=BG_COLOUR, font=(TEXT_FONT, 13), fg="gray13")
+play_label_2.grid(column=3, row=5, sticky=W)
+
+stop_img = Image.open("stop_symbol.png")
+stop_img_resized = stop_img.resize((40,40))
+stop_symbol_img = ImageTk.PhotoImage(stop_img_resized)
+stop_button = Button(image=stop_symbol_img, highlightthickness=0, command=stop_playing, bg=BG_COLOUR)
+stop_button.grid(column=2, row=6, sticky=W, padx=(10,0), pady=(5,0))
+
+stop_label_1 = Label(text="Stop", bg=BG_COLOUR, font=(TEXT_FONT, 13), fg="gray13")
+stop_label_1.grid(column=2, row=6, sticky=E)
+
+stop_label_2 = Label(text="Playing", bg=BG_COLOUR, font=(TEXT_FONT, 13), fg="gray13")
+stop_label_2.grid(column=3, row=6, sticky=W)
+
+window.grid_columnconfigure(0, weight=4, uniform="equal")  # Mayor tamaño para la columna 0
+window.grid_columnconfigure(1, weight=1, uniform="equal")  # Menor tamaño para la columna 1
+window.grid_columnconfigure(2, weight=1, uniform="equal")  # Menor tamaño para la columna 2
+window.grid_columnconfigure(3, weight=4, uniform="equal")
+
 error_label = Label(text="", bg=BG_COLOUR, font=(TEXT_FONT, 16), fg="gray3")
-error_label.grid(column=0, row=5, columnspan=4, pady=(10,40))
+error_label.grid(column=0, row=7, columnspan=4, pady=(30,20))
 
 window.mainloop()
